@@ -2,7 +2,7 @@ import {useCallback,useEffect,useRef,useState}from'react';
 import{db}from'./db';
 type Entry={id:string;product_id:string;product_name:string;action:string;before_data:Record<string,unknown>|null;after_data:Record<string,unknown>;created_at:string};
 const actions:Record<string,string>={created:'新增貨品',updated:'修改資料',deleted:'刪除貨品',restored:'復原貨品',baseline:'既有貨品快照'};
-const fields:Record<string,string>={name:'貨品名稱',barcode:'條碼',brand:'品牌',category:'種類',wattage:'功率',color_temperature:'色溫',location:'貨架位置',purchase_price:'購入價',selling_price:'售價',low_stock:'低庫存提示',specifications:'其他規格',archived_at:'刪除時間'};
+const fields:Record<string,string>={name:'貨品名稱',barcode:'條碼',brand:'品牌',category:'種類',wattage:'功率',color_temperature:'色溫',location:'貨架位置',selling_price:'售價',low_stock:'低庫存提示',specifications:'其他規格',archived_at:'刪除時間'};
 const date=(v:string)=>new Date(v).toLocaleString('zh-HK',{timeZone:'Asia/Hong_Kong'});
 const value=(key:string,v:unknown)=>v===null||v===undefined||v===''?'未填寫':key==='archived_at'?date(String(v)):String(v);
 export default function ProductActivity({productId}:{productId?:string}){

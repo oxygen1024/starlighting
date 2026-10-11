@@ -1,4 +1,4 @@
-export type Product={id:string;name:string;sku:string;barcode:string|null;category:string;brand:string;wattage:string;color_temperature:string;specifications:string;location:string;purchase_price:number;selling_price:number;low_stock:number;created_at:string};
+export type Product={id:string;name:string;sku:string;barcode:string|null;category:string;brand:string;wattage:string;color_temperature:string;specifications:string;location:string;selling_price:number;low_stock:number;created_at:string};
 export type Line={product_id:string;quantity:number};
 export function addLine(lines:Line[],id:string):Line[]{return lines.some(l=>l.product_id===id)?lines.map(l=>l.product_id===id?{...l,quantity:l.quantity+1}:l):[...lines,{product_id:id,quantity:1}];}
 export function validQuantity(n:number){return Number.isSafeInteger(n)&&n>0&&n<=9999999;}
