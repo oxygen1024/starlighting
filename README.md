@@ -132,17 +132,17 @@ Migration `20261011103707_import_products_with_stock.sql` 已套用。私有匯�
 
 執行 `20261011113135_protect_product_costs.sql` 後，入貨單價搬到不公開的 `inventory_private.product_costs`；原有成本快照搬到 `inventory_private.cost_history`。搬移驗證成功後才移除 `products.purchase_price` 及公開操作紀錄內的成本欄位。貨品、庫存及交易記錄保持原狀。舊版網頁必須重新整理。
 
-- 點頁頂「查看成本」輸入共享密碼。解鎖最多 15 分鐘；離開分頁／應用程式即鎖定。密碼和解鎖令牌不寫入 localStorage 或 sessionStorage。
+- 點頁頂「查看成本」輸入共享密碼。解鎖不設時限，切換分頁／應用程式不會鎖定；可隨時手動鎖定。令牌只存同一分頁的 sessionStorage，重新整理仍保留；密碼不會儲存在瀏覽器。
 - 私密資料不加入 Realtime；公開的 `cost_revision` 只發送版本數字，已解鎖裝置收到後重新經驗證讀取成本。每 30 秒亦檢查更新。
 - 在成本面板修改入貨單價、查看成本紀錄、更改密碼。改密碼即撤銷所有解鎖令牌。更新價格有並行修改檢查。
-- bcrypt（成本係數 12）儲存密碼雜湊；32 位元組隨機令牌在資料庫只存 SHA-256，伺服器驗證有效期。8 次失敗後於 5 分鐘視窗內暫停驗證；全站共用限制，避免換裝置繞過，但亦可能被惡意人士暫時耗盡。
-- 密碼最少 12 字元，UTF-8 最多 72 位元組。只有知道密碼的人可查看／修改成本；共享密碼不會識別個別操作員。員工其他功能繼續免登入，仍應只使用測試資料。
+- bcrypt（成本係數 12）儲存密碼雜湊；32 位元組隨機令牌在資料庫只存 SHA-256，伺服器驗證令牌及撤銷狀態。8 次失敗後於 5 分鐘視窗內暫停驗證；全站共用限制，避免換裝置繞過，但亦可能被惡意人士暫時耗盡。
+- 密碼最少 4 字元，可用四位數字（包括前置零），UTF-8 最多 72 位元組。只有知道密碼的人可查看／修改成本；共享密碼不會識別個別操作員。員工其他功能繼續免登入，仍應只使用測試資料。
 - 未設定初始密碼時成本預設鎖定，網站無公開「首次設定」入口。由專案擁有人在 Supabase SQL Editor 設定或忘記密碼時重設；不要將真實密碼或雜湊提交 GitHub：
 
 ```sql
 begin;
 update inventory_private.cost_access_settings
-set password_hash=extensions.crypt('在此換成你自己至少12字元的新密碼',extensions.gen_salt('bf',12)),
+set password_hash=extensions.crypt('在此換成你自己至少4字元的新密碼',extensions.gen_salt('bf',12)),
     failures=0,retry_at=clock_timestamp()
 where singleton;
 delete from inventory_private.cost_sessions;
@@ -150,6 +150,8 @@ update public.cost_revision set revision=revision+1 where singleton;
 commit;
 ```
 
-`tests/costAccess.test.ts` 使用 PGlite 真正 pgcrypto 驗證資料搬移、匿名拒絕、密碼、令牌、限流、成本修改紀錄、改密碼撤銷以及原有 Excel／入出倉流程。瀏覽器與實機背景鎖定仍須用 iPhone／Android 實測。
+`tests/costAccess.test.ts` 使用 PGlite 真正 pgcrypto 驗證資料搬移、匿名拒絕、密碼、令牌、限流、成本修改紀錄、改密碼撤銷以及原有 Excel／入出倉流程。手機分頁切換與重新整理仍須用 iPhone／Android 實測。
 
-安全顧問會提示私密表有 RLS 但沒有 policy（刻意拒絕客戶端直接存取），以及匿名角色可呼叫 SECURITY DEFINER RPC（這些成本入口刻意使用伺服器驗證的短期令牌，而非帳戶角色）。已逐項檢查固定 search_path、最小授權、輸入及令牌驗證。參考：[私密表 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)、[匿名 RPC](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)。
+安全顧問會提示私密表有 RLS 但沒有 policy（刻意拒絕客戶端直接存取），以及匿名角色可呼叫 SECURITY DEFINER RPC（這些成本入口刻意使用伺服器驗證的解鎖令牌，而非帳戶角色）。已逐項檢查固定 search_path、最小授權、輸入及令牌驗證。參考：[私密表 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)、[匿名 RPC](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)。
+
+密碼及解鎖偏好更新：依次套用 `20261011114155_relax_cost_password_unlock.sql`，接受四位數字並取消自動到期；不會重設現有密碼。手動鎖定及更改密碼撤銷仍然有效。
