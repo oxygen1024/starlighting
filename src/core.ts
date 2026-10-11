@@ -5,4 +5,4 @@ export function validQuantity(n:number){return Number.isSafeInteger(n)&&n>0&&n<=
 export function csvCell(value:unknown){let s=String(value??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';}
 export function csv(rows:unknown[][]){return '\uFEFF'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n');}
 export class ScanGate{private last='';private seen=0;accept(code:string,now=Date.now()){const repeated=code===this.last&&now-this.seen<1800;this.last=code;this.seen=now;return !repeated;}reset(){this.last='';this.seen=0;}}
-export function matches(p:Product,query:string,filters:Record<string,string>){const text=[p.name,p.sku,p.barcode].join(' ').toLowerCase();return text.includes(query.trim().toLowerCase())&&Object.entries(filters).every(([k,v])=>!v||String(p[k as keyof Product])===v);}
+export function matches(p:Product,query:string,filters:Record<string,string>){const text=[p.name,p.barcode].join(' ').toLowerCase();return text.includes(query.trim().toLowerCase())&&Object.entries(filters).every(([k,v])=>!v||String(p[k as keyof Product])===v);}
