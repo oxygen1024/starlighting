@@ -105,3 +105,11 @@ GitHub 寫入仍受 403 權限阻擋；未部署網站。
 `20261011102455_archive_products.sql` 新增 archived_at 及 archive_products RPC，並令入出倉與刪除按相同次序鎖定產品。刪除採封存方式：前端隱藏，歷史交易／相片保留，不可再入出倉；條碼釋放供正確貨品使用。重試刪除已封存貨品不會重複操作。一般客戶端不能直接封存／取消封存，Supabase 管理員可復原。匿名 RPC 權限是既定免登入測試設計，advisor 對 SECURITY DEFINER 的提醒仍適用：https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable 。
 
 17 項自動測試、TypeScript 及 build 通過；雲端以回退交易驗證封存及重試。未在兩部實體裝置上測試同時刪除／入倉。
+
+## 操作紀錄
+
+導航「操作紀錄」分為入倉／出倉及新增／修改／刪除兩部分。貨品詳情亦可開啟該貨品的操作紀錄。新增 `product_activity_log`、私有 schema 的資料庫 trigger 及 Realtime publication；紀錄由資料庫自動產生，客戶端只能讀取，不能修改或刪除。支援日期、名稱、類型及每頁 50 筆瀏覽，顯示變更前後欄位。免登入設計無法識別員工身份。
+
+既有貨品記為啟用當下的 baseline 快照，而非假冒歷史新增紀錄；快照內原有 created_at 仍顯示為貨品建立時間。之後 Excel 匯入、條碼配對、資料修改及刪除均會自動記錄。同一資料庫交易失敗時，操作紀錄亦會回退。
+
+Migration：`20261011102758_product_activity_log.sql`。19 項自動測試及 build 通過，真實資料庫亦以回退交易驗證三種操作均產生紀錄。
