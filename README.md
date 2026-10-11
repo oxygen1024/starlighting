@@ -89,3 +89,11 @@ npm run build
 安全 advisor 提示匿名及 authenticated 可呼叫 SECURITY DEFINER RPC：這是免登入測試的指定設計，函式固定 search_path、檢查輸入、鎖定庫存，且禁止客戶端直接修改 inventory/history。詳見 https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable 。
 
 GitHub 寫入仍受 403 權限阻擋；未部署網站。
+
+## 新功能：Excel 匯入、條碼配對及字體大小
+
+貨品管理及首頁提供「Excel 匯入」入口。支援 .xlsx（舊 .xls 請另存為 .xlsx）、最多 5MB、每張工作表最多 1,000 行貨品及 100 欄。選擇工作表、是否有標題行、名稱欄及可選品牌／種類欄，預覽後確認。空白行略過、無效文字阻止匯入、同名預設略過，可逐行剔除。只新增貨品，庫存維持不變；無需條碼或 SKU。匯入用固定 UUID 及單次資料庫 upsert，網絡結果不明時同一次重試不重複新增。關閉頁面會遺失未提交設定，結果不明時請先在同一畫面重試。
+
+「掃描配對條碼」：搜尋並選取現有貨品、掃描／輸入條碼、確認配對。預設顯示未有條碼貨品，可取消篩選以替換條碼。用舊條碼條件更新，防止覆蓋其他裝置剛修改的條碼，並依靠資料庫唯一限制防止同碼配到兩件貨品。
+
+頁頂可選細／標準／大字，手機按鈕加大及首頁三步操作指引。字體偏好只保存在目前裝置；貨品及庫存仍保存在 Supabase 並跨裝置同步。`.xlsx` 解析使用 MIT 授權 read-excel-file，按需要才載入。
