@@ -13,6 +13,7 @@ beforeAll(async()=>{
  id=(await db.query<{id:string}>("insert into products(name,sku,purchase_price)values('私密成本測試','COST',32.50) returning id")).rows[0].id;
  await db.exec('begin;'+readFileSync('supabase/migrations/20261011113135_protect_product_costs.sql','utf8').replace('alter publication supabase_realtime add table public.cost_revision;','')+'commit;');
  await db.exec(readFileSync('supabase/migrations/20261011114155_relax_cost_password_unlock.sql','utf8'));
+ await db.exec(readFileSync('supabase/migrations/20261012132000_import_product_costs.sql','utf8'));
  await db.query("update inventory_private.cost_access_settings set password_hash=extensions.crypt($1,extensions.gen_salt('bf',4))",[password]);
 },30000);
 afterAll(async()=>await db.close());
@@ -55,6 +56,23 @@ it('新增、Excel 匯入與庫存操作維持正常，私密單價預設 0',asy
   expect((await costs()).rows).toContainEqual({product_id:newId,purchase_price:'0.00'});
   await db.query('select process_inventory_batch($1,$2,$3::jsonb,$4,$5)',['out',warehouse,JSON.stringify([{product_id:newId,quantity:1}]),crypto.randomUUID(),'測試']);
   expect((await db.query('select quantity from inventory where product_id=$1',[newId])).rows).toEqual([{quantity:2}]);
+ }finally{await db.exec('reset role');}
+});
+
+it('成本匯入需要密碼令牌，原子儲存並安全重試且公開紀錄不洩漏成本',async()=>{
+ const newId=crypto.randomUUID(),key=crypto.randomUUID();const warehouse=(await db.query<{id:string}>('select id from warehouses limit 1')).rows[0].id;
+ const items=JSON.stringify([{id:newId,name:'成本匯入測試',quantity:4,purchase_price:18.75}]);
+ await db.exec('set role anon');try{
+  await expect(db.query('select import_products_with_stock($1,$2,$3::jsonb)',[key,warehouse,items])).rejects.toThrow('成本已鎖定');
+  expect((await db.query('select id from products where id=$1',[newId])).rows).toHaveLength(0);
+  const args=[key,warehouse,items,token];const first=await db.query('select import_products_with_stock($1,$2,$3::jsonb,$4)',args);
+  expect(await db.query('select import_products_with_stock($1,$2,$3::jsonb,$4)',args)).toEqual(first);
+  expect((await costs()).rows).toContainEqual({product_id:newId,purchase_price:'18.75'});
+  expect((await db.query('select quantity from inventory where product_id=$1',[newId])).rows).toEqual([{quantity:4}]);
+  expect(JSON.stringify((await db.query('select * from product_activity_log where product_id=$1',[newId])).rows)).not.toContain('18.75');
+  const badId=crypto.randomUUID(),goodId=crypto.randomUUID();
+  await expect(db.query('select import_products_with_stock($1,$2,$3::jsonb,$4)',[crypto.randomUUID(),warehouse,JSON.stringify([{id:goodId,name:'回退一',quantity:3,purchase_price:5},{id:badId,name:'回退二',quantity:2,purchase_price:-1}]),token])).rejects.toThrow('非負數');
+  expect((await db.query('select id from products where id in ($1,$2)',[badId,goodId])).rows).toHaveLength(0);
  }finally{await db.exec('reset role');}
 });
 it('立即鎖定撤銷令牌，新令牌不設到期時間',async()=>{

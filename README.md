@@ -176,3 +176,8 @@ commit;
 `AdjustQuantity.tsx` 在貨品列表提供「更改數量」，先選倉庫、讀取目前庫存，再輸入目標總數（0 至 9999999）及選填原因。使用 `20261012123121_adjust_inventory_quantity.sql` 的 `adjust_inventory_quantity` RPC，以貨品鎖及原數量比較防止覆蓋其他裝置的修改；同一識別碼重試不重複調整。
 
 增加／減少差額沿用 `inventory_batches` 與 `inventory_batch_items`，備註標明「庫存調整」，保留原數量、新數量及原因；不變的數量不製造假交易。既有 Realtime 更新庫存及紀錄。新私密表 `stock_adjustment_requests` 只供 RPC 判斷重試，不允許匿名直接讀寫。48 項測試、TypeScript 及建置通過。
+
+### Excel 成本欄位
+- 欄位配對新增「成本／入貨單價（選填）」，港元、非負數、最多兩位小數；不選或空白預設 0。
+- 先解鎖成本密碼才能配對及匯入成本。沿用私密成本表、修改紀錄及成本同步通知。
+- Migration `20261012132000_import_product_costs.sql` 為匯入 RPC 增加可選 `p_token`，舊三參數呼叫仍可使用。成本、貨品、庫存同一交易提交，重試不重複建立。
