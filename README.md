@@ -155,3 +155,18 @@ commit;
 安全顧問會提示私密表有 RLS 但沒有 policy（刻意拒絕客戶端直接存取），以及匿名角色可呼叫 SECURITY DEFINER RPC（這些成本入口刻意使用伺服器驗證的解鎖令牌，而非帳戶角色）。已逐項檢查固定 search_path、最小授權、輸入及令牌驗證。參考：[私密表 RLS](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)、[匿名 RPC](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)。
 
 密碼及解鎖偏好更新：依次套用 `20261011114155_relax_cost_password_unlock.sql`，接受四位數字並取消自動到期；不會重設現有密碼。手動鎖定及更改密碼撤銷仍然有效。
+
+### 倉務工作台與執貨改善
+
+參考順豐公開的[標準倉儲配送服務](https://htm.sf-express.com/tw/tc/products_services/storage_service/storage_services/standard_express_service/)所列的收貨掃描、訂單揀貨、覆核、庫存預警、庫位管理及報表流程，以及[順豐科技 LaaS](https://www.sf-laas.com/)的可視化倉儲概念，按星光照明現有流程實作：
+
+- `OperationsDashboard.tsx`：每日倉務快捷操作、倉庫範圍、香港日期的入出倉件數及單據數、缺貨／低庫存提示；點數字可查對應紀錄。
+- `InventoryLookup.tsx`、`warehouse.ts`：庫存查詢、寬鬆名稱／條碼／貨架搜尋、品牌／種類／貨架篩選、數量排序、每頁 50 款，及匯出全部符合條件的 CSV。匯出欄位明確列出，不包含入貨單價、成本或內部 SKU。
+- `PickingChecklist.tsx`：出倉清單按貨架自然排序（A2 先於 A10）、掃碼定位核對、逐款剔選數量、最新缺貨提示；改數量／條碼／倉庫會令舊核對失效。核對本身不扣貨，最終交易仍使用原有原子 RPC。
+- `PrintPreview.tsx`：執貨清單、已完成入出倉單據的 A4 列印預覽／瀏覽器儲存 PDF。已完成單據使用交易快照。
+- `main.tsx`、`style.css`：手機卡片、桌面表格、批次步驟提示、固定確認操作區及預先彙總庫存查詢，沿用原有品牌及字體大小選擇。
+- `tests/warehouse.test.ts`：香港跨日、倉庫數量、今日交易、組合篩選、貨架排序、公開欄位匯出及核對失效測試。
+
+不需要新資料庫遷移或 Supabase 設定。資料沿用既有共用資料庫及 Realtime；貨架沿用 `products.location`，是各倉共用的貨品資料，並非新增每倉獨立儲位。待提交清單及核對狀態沿用當前操作頁，未儲存為共享派工單。未加入順豐 API 或使用其內部系統畫面。
+
+驗證：TypeScript、45 項自動測試及正式建置；此環境沒有瀏覽器 QA，手機相機、列印及排版仍需實機驗證。
