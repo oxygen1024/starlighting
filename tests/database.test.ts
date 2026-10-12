@@ -2,7 +2,7 @@ import {PGlite}from'@electric-sql/pglite';import{readFileSync}from'node:fs';impo
 let db:PGlite;let wh:string;let a:string;let b:string;const key=()=>crypto.randomUUID();
 async function run(type:string,items:any[],id=key()){return db.query<{result:any}>('select public.process_inventory_batch($1,$2,$3::jsonb,$4,$5) as result',[type,wh,JSON.stringify(items),id,'test']);}
 const line=(id:string,n:number)=>({product_id:id,quantity:n});
-beforeAll(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;');await db.exec(readFileSync('supabase/migrations/202610110001_inventory.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011102455_archive_products.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011102758_product_activity_log.sql','utf8').replace('alter publication supabase_realtime add table public.product_activity_log;',''));await db.exec(readFileSync('supabase/migrations/20261011103707_import_products_with_stock.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011105527_archive_products_with_stock.sql','utf8'));wh=(await db.query<{id:string}>('select id from warehouses')).rows[0].id;const rows=(await db.query<{id:string}>("insert into products(name,sku)values('測試燈 A','A'),('測試燈 B','B')returning id")).rows;[a,b]=rows.map(r=>r.id);},30000);
+beforeAll(async()=>{db=new PGlite();await db.exec('create role anon;create role authenticated;');await db.exec(readFileSync('supabase/migrations/202610110001_inventory.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011102455_archive_products.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011102758_product_activity_log.sql','utf8').replace('alter publication supabase_realtime add table public.product_activity_log;',''));await db.exec(readFileSync('supabase/migrations/20261011103707_import_products_with_stock.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261011105527_archive_products_with_stock.sql','utf8'));await db.exec(readFileSync('supabase/migrations/20261012123121_adjust_inventory_quantity.sql','utf8'));wh=(await db.query<{id:string}>('select id from warehouses')).rows[0].id;const rows=(await db.query<{id:string}>("insert into products(name,sku)values('測試燈 A','A'),('測試燈 B','B')returning id")).rows;[a,b]=rows.map(r=>r.id);},30000);
 afterAll(async()=>await db.close());
 it('多項入倉及同識別碼安全重試',async()=>{const id=key();const first=await run('in',[line(a,10),line(b,5)],id);const again=await run('in',[line(b,5),line(a,10)],id);expect(first.rows[0].result).toEqual(again.rows[0].result);expect((await db.query('select quantity from inventory order by quantity')).rows).toEqual([{quantity:5},{quantity:10}]);await expect(run('in',[line(a,11),line(b,5)],id)).rejects.toThrow('交易識別碼');});
 it('不足庫存拒絕整批，包括較早更新嘅貨品',async()=>{const before=(await db.query('select * from inventory order by product_id')).rows;const count=(await db.query('select count(*) from inventory_batches')).rows;await expect(run('out',[line(a,1),line(b,6)])).rejects.toThrow('庫存不足');expect((await db.query('select * from inventory order by product_id')).rows).toEqual(before);expect((await db.query('select count(*) from inventory_batches')).rows).toEqual(count);});
@@ -25,3 +25,35 @@ it('超過 200 行初始庫存仍屬同一原子匯入，後段失敗不留下�
 
 it('有庫存貨品可刪除：全倉清零、出倉及刪除紀錄保留，重試不重複扣貨',async()=>{const id=key();await db.query('insert into products(id,name,sku) values($1,$2,$3)',[id,'有庫存待刪',id]);const wh2=(await db.query<{id:string}>("insert into warehouses(name) values('刪除測試倉') returning id")).rows[0].id;await run('in',[line(id,3)]);const previous=wh;wh=wh2;try{await run('in',[line(id,2)]);}finally{wh=previous;}const expected=(await db.query('select product_id,warehouse_id,quantity from inventory where product_id=$1',[id])).rows;const count=(await db.query<{n:number}>('select count(*)::int as n from inventory_batches')).rows[0].n;await db.exec('set role anon');try{expect((await db.query('select archive_products_with_stock($1::uuid[],$2::jsonb) as n',[[id],JSON.stringify(expected)])).rows[0]).toEqual({n:1});expect((await db.query('select sum(quantity)::int as q from inventory where product_id=$1',[id])).rows[0]).toEqual({q:0});expect((await db.query<{n:number}>('select count(*)::int as n from inventory_batches')).rows[0].n).toBe(count+2);expect((await db.query("select action from product_activity_log where product_id=$1 order by created_at desc limit 1",[id])).rows[0]).toEqual({action:'deleted'});expect((await db.query('select archive_products_with_stock($1::uuid[],$2::jsonb) as n',[[id],JSON.stringify(expected)])).rows[0]).toEqual({n:0});expect((await db.query<{n:number}>('select count(*)::int as n from inventory_batches')).rows[0].n).toBe(count+2);}finally{await db.exec('reset role');}});
 it('確認後庫存變動會拒絕整批刪除，零庫存仍可刪除',async()=>{const id=key(),empty=key();await db.query('insert into products(id,name,sku) values($1,$2,$3),($4,$5,$6)',[id,'改變庫存',id,empty,'零庫存',empty]);await run('in',[line(id,1)]);const expected=[{product_id:id,warehouse_id:wh,quantity:1}];await run('in',[line(id,2)]);const count=(await db.query('select count(*) from inventory_batches')).rows;await expect(db.query('select archive_products_with_stock($1::uuid[],$2::jsonb)',[[id,empty],JSON.stringify(expected)])).rejects.toThrow('庫存已改變');expect((await db.query('select count(*) from inventory_batches')).rows).toEqual(count);expect((await db.query('select archived_at from products where id=$1',[empty])).rows[0]).toEqual({archived_at:null});expect((await db.query('select archive_products_with_stock($1::uuid[],$2::jsonb) as n',[[empty],'[]'])).rows[0]).toEqual({n:1});});
+
+it('直接改庫存：設總數、清零、保留調整記錄，同識別碼重試不重複',async()=>{
+ const id=key(),k=key();await db.query('insert into products(id,name,sku) values($1,$2,$3)',[id,'調整測試',id]);
+ await db.exec('set role anon');try{
+  const sql='select adjust_inventory_quantity($1,$2,$3,$4,$5,$6) as result';const args=[k,id,wh,0,12,'盤點'];
+  const r=await db.query(sql,args);expect((await db.query(sql,args)).rows).toEqual(r.rows);
+  expect((await db.query('select quantity from inventory where product_id=$1',[id])).rows).toEqual([{quantity:12}]);
+  await db.query(sql,[key(),id,wh,12,0,'清零']);
+  expect((await db.query('select quantity from inventory where product_id=$1',[id])).rows).toEqual([{quantity:0}]);
+  expect((await db.query('select before_quantity,after_quantity from inventory_batch_items where product_id=$1 order by before_quantity',[id])).rows).toEqual([{before_quantity:0,after_quantity:12},{before_quantity:12,after_quantity:0}]);
+ }finally{await db.exec('reset role');}
+});
+it('過時庫存、負數及已刪貨品不能直接更改，失敗不留下交易',async()=>{
+ const id=key();await db.query('insert into products(id,name,sku) values($1,$2,$3)',[id,'競爭調整',id]);await run('in',[line(id,3)]);
+ const count=(await db.query('select count(*) from inventory_batches')).rows;
+ await expect(db.query('select adjust_inventory_quantity($1,$2,$3,0,9)',[key(),id,wh])).rejects.toThrow('其他裝置');
+ await expect(db.query('select adjust_inventory_quantity($1,$2,$3,3,-1)',[key(),id,wh])).rejects.toThrow('整數');
+ expect((await db.query('select count(*) from inventory_batches')).rows).toEqual(count);
+ expect((await db.query('select quantity from inventory where product_id=$1',[id])).rows).toEqual([{quantity:3}]);
+ await db.query('select archive_products_with_stock($1::uuid[],$2::jsonb)',[[id],JSON.stringify([{product_id:id,warehouse_id:wh,quantity:3}])]);
+ await expect(db.query('select adjust_inventory_quantity($1,$2,$3,0,9)',[key(),id,wh])).rejects.toThrow('已刪除');
+});
+it('相同數量不產生假出入倉，跨倉調整互不影響，識別碼不可改用途',async()=>{
+ const id=key(),k=key();await db.query('insert into products(id,name,sku) values($1,$2,$3)',[id,'多倉調整',id]);await run('in',[line(id,5)]);
+ const second=(await db.query<{id:string}>("insert into warehouses(name)values('調整第二倉')returning id")).rows[0].id;
+ const count=(await db.query('select count(*) from inventory_batches')).rows;
+ await db.query('select adjust_inventory_quantity($1,$2,$3,5,5)',[k,id,wh]);
+ expect((await db.query('select count(*) from inventory_batches')).rows).toEqual(count);
+ await expect(db.query('select adjust_inventory_quantity($1,$2,$3,5,6)',[k,id,wh])).rejects.toThrow('識別碼');
+ await db.query('select adjust_inventory_quantity($1,$2,$3,0,2)',[key(),id,second]);
+ expect((await db.query('select quantity from inventory where product_id=$1 and warehouse_id=$2',[id,wh])).rows).toEqual([{quantity:5}]);
+});

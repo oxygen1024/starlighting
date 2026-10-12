@@ -170,3 +170,9 @@ commit;
 不需要新資料庫遷移或 Supabase 設定。資料沿用既有共用資料庫及 Realtime；貨架沿用 `products.location`，是各倉共用的貨品資料，並非新增每倉獨立儲位。待提交清單及核對狀態沿用當前操作頁，未儲存為共享派工單。未加入順豐 API 或使用其內部系統畫面。
 
 驗證：TypeScript、45 項自動測試及正式建置；此環境沒有瀏覽器 QA，手機相機、列印及排版仍需實機驗證。
+
+### 貨品管理直接更改數量
+
+`AdjustQuantity.tsx` 在貨品列表提供「更改數量」，先選倉庫、讀取目前庫存，再輸入目標總數（0 至 9999999）及選填原因。使用 `20261012123121_adjust_inventory_quantity.sql` 的 `adjust_inventory_quantity` RPC，以貨品鎖及原數量比較防止覆蓋其他裝置的修改；同一識別碼重試不重複調整。
+
+增加／減少差額沿用 `inventory_batches` 與 `inventory_batch_items`，備註標明「庫存調整」，保留原數量、新數量及原因；不變的數量不製造假交易。既有 Realtime 更新庫存及紀錄。新私密表 `stock_adjustment_requests` 只供 RPC 判斷重試，不允許匿名直接讀寫。48 項測試、TypeScript 及建置通過。
