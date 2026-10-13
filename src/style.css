@@ -187,3 +187,6 @@
  .product-list .adjust-stock-button{grid-column:1 / 3}.product-list .delete-button{grid-column:3}
 }
 @media(max-width:600px){.product-list .product-card{padding:16px 12px;column-gap:10px}}
+
+/* Quiet home and persistent return navigation. */
+[hidden]{display:none!important}.page-back{display:flex;align-items:center;gap:12px;margin:0 0 20px;flex-wrap:wrap}.page-back span{color:var(--muted,#667085);font-size:.85rem}.home-simple{max-width:960px;margin:24px auto;padding:clamp(20px,4vw,44px)}.home-simple h2{font-size:clamp(1.5rem,3vw,2.1rem);margin:12px 0}.home-simple .hub-search{margin:28px 0}.home-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:24px 0 32px}.home-actions button{display:flex;flex-direction:column;align-items:flex-start;gap:14px;text-align:left;padding:24px;min-height:150px}.home-actions strong{font-size:1.2rem}.home-actions small{color:var(--muted,#667085)}@media(max-width:600px){.home-actions{grid-template-columns:1fr;gap:12px}.home-actions button{min-height:auto;padding:18px;display:grid;grid-template-columns:28px 1fr;gap:6px 12px}.home-actions button svg{grid-row:span 2}.home-actions small{grid-column:2}.page-back span{display:none}}
