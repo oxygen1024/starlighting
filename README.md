@@ -206,3 +206,8 @@ commit;
 - 部署 `supabase/functions/create-staff-account/index.ts`。verify_jwt=false 是因函式自行呼叫 Auth /user 驗證令牌，再核對 staff_profile 老細權限；只有服務端使用環境內的 service_role。
 - Auth 建立與名單啟用分兩步，未完成名單啟用時無庫存權限。重試識別碼存在 Auth 的管理端 metadata，安全重試不重複建立帳戶；最終啟用再次檢查老細及有效 session，且只能建立 staff。
 - `src/BossAccounts.tsx` 新增帳戶 UI；`StaffAuth.tsx` 載入及定期核對角色；`CostAccess.tsx` 按老細角色載入成本。
+
+### 操作人及修改登入名稱
+- 移除頁首管理成本及貨品詳情查看成本按鈕。老細於詳情直接見入貨單價；修改單價移至設定頁「入貨單價設定」。
+- `20261018083324_actor_history_and_account_name.sql` 為批次及貨品操作紀錄加入 actor_id / actor_username。伺服器 trigger 取 auth.uid()，保留當時登入名稱，舊資料不推測操作人。交易匯出 CSV 及列印亦帶操作人。
+- 設定頁可修改自己登入名稱及密碼。`change-login-name` Edge Function 驗證 Auth user 與員工 session，只更新當前使用者；Auth email 與私密登入名稱透過 trigger 同一交易變更，重名失敗全部回退。角色及庫存資料不變，舊紀錄保留舊名稱。

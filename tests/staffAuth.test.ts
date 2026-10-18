@@ -68,6 +68,24 @@ it('員工不可管理帳戶或透過舊成本密碼取得成本；老細毋須�
  expect((await db.query('select * from list_staff_accounts()')).rows).toHaveLength(1);
  }finally{await db.exec("reset role;update inventory_private.staff_accounts set role='staff'");}
 });
+it('操作人由登入身份記錄，改名後舊紀錄保留名稱；重名會整體回退',async()=>{
+ expect((await db.query('select actor_id,actor_username from inventory_batches')).rows).toEqual([{actor_id:user,actor_username:'tester'}]);
+ await db.exec('set role authenticated');try{
+ await db.query("update products set brand='測試品牌' where sku='AUTH-TEST'");
+ expect((await db.query("select actor_username from product_activity_log where action='updated'")).rows).toEqual([{actor_username:'tester'}]);
+ await expect(db.query("update inventory_private.staff_accounts set username='fake'")).rejects.toThrow('permission denied');
+ }finally{await db.exec('reset role');}
+ await db.query("update auth.users set email='renamed@login.starlighting.invalid' where id=$1",[user]);
+ expect((await db.query('select username from inventory_private.staff_accounts where user_id=$1',[user])).rows).toEqual([{username:'renamed'}]);
+ expect((await db.query('select actor_username from inventory_batches')).rows).toEqual([{actor_username:'tester'}]);
+ const other='44444444-4444-4444-8444-444444444444';await db.query('insert into auth.users(id)values($1)',[other]);await db.query("insert into inventory_private.staff_accounts(user_id,username)values($1,'occupied')",[other]);
+ await expect(db.query("update auth.users set email='occupied@login.starlighting.invalid' where id=$1",[user])).rejects.toThrow('duplicate key');
+ expect((await db.query('select email from auth.users where id=$1',[user])).rows).toEqual([{email:'renamed@login.starlighting.invalid'}]);
+ await db.exec('set role authenticated');try{
+ await db.query("update products set brand='新名稱操作' where sku='AUTH-TEST'");
+ expect((await db.query("select actor_username from product_activity_log where action='updated' order by created_at desc limit 1")).rows).toEqual([{actor_username:'renamed'}]);
+ }finally{await db.exec('reset role');}
+});
 it('停用帳戶及已撤銷登入工作階段立即拒絕存取',async()=>{
  await db.exec('update inventory_private.staff_accounts set active=false');await db.exec('set role authenticated');
  try{await expect(db.query('select staff_session()')).rejects.toThrow('已授權');expect((await db.query('select * from products')).rows).toEqual([]);}finally{await db.exec('reset role');}
