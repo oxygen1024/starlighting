@@ -5,7 +5,6 @@ const url=env.VITE_SUPABASE_URL || publicConfig.url;
 const key=env.VITE_SUPABASE_ANON_KEY || publicConfig.publishableKey;
 export const configured=Boolean(url&&key);
 export const db=configured?createClient(url,key):null;
-export function imageUrl(path?:string){return path&&db?db.storage.from('product-images').getPublicUrl(path).data.publicUrl:undefined;}
 export async function compress(file:File,max:number):Promise<Blob>{
  if(file.size>25*1024*1024)throw new Error('圖片不可超過 25MB');
  const url=URL.createObjectURL(file);const img=new Image();

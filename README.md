@@ -1,6 +1,6 @@
 # 星光照明倉存管理
 
-React + Vite + TypeScript + Supabase；GitHub Pages 靜態網站。全部庫存、貨品、相片參考及交易都使用同一 Supabase 專案；本機只保存未提交操作的記憶體狀態，不會假裝跨裝置同步。免員工登入，只供測試資料。
+React + Vite + TypeScript + Supabase；GitHub Pages 靜態網站。全部庫存、貨品、相片參考及交易都使用同一 Supabase 專案；本機只保存未提交操作的記憶體狀態，不會假裝跨裝置同步。需要已授權帳戶登入；仍只供測試資料。
 
 ## 已實作
 
@@ -32,11 +32,11 @@ React + Vite + TypeScript + Supabase；GitHub Pages 靜態網站。全部庫存�
 7. 預期網址：`https://oxygen1024.github.io/starlighting/`。需等 Pages 成功部署後才可使用。
 8. 在貨品管理新增測試貨品，再透過入倉輸入起始庫存。不要直接修改 inventory。
 
-Realtime 須保持六張表加入 `supabase_realtime` publication；SQL 已設定。Storage 使用公開圖片 bucket，檔名採 UUID。移除／替換相片只更新產品參考，保留舊 blob 供管理員清理，避免同時操作誤刪仍使用中的圖片。
+Realtime 須保持六張表加入 `supabase_realtime` publication；SQL 已設定。Storage 使用私人圖片 bucket，已登入並獲授權後下載圖片，檔名採 UUID。移除／替換相片只更新產品參考，保留舊 blob 供管理員清理，避免同時操作誤刪仍使用中的圖片。
 
 ## 匿名存取影響
 
-沒有員工身分或私人資料保護：任何取得網址／公開 key 的人都能讀取價格、圖片、庫存與交易，並修改貨品、上載圖片及提交入出倉。RLS 與 GRANT 禁止客戶端直接修改庫存或新增／修改／刪除完成交易，但**無法證明提交者是員工**。只使用測試資料；不要放客戶個人資料或真實敏感成本。管理員仍可從 SQL 管理資料。公開 Storage 亦可能被濫用並耗用免費配額。
+登入安全設定已於 2026-10-18 更新：未登入或未列於私密 staff_accounts 名單的帳戶無法讀寫倉存、執行 RPC 或存取圖片。所有裝置仍共用同一資料庫。歷史紀錄不會因這次新增登入而補上操作員身份；如多人共用同一帳戶，亦不能識別個別員工。
 
 ## 本機開發
 
@@ -136,7 +136,7 @@ Migration `20261011103707_import_products_with_stock.sql` 已套用。私有匯�
 - 私密資料不加入 Realtime；公開的 `cost_revision` 只發送版本數字，已解鎖裝置收到後重新經驗證讀取成本。每 30 秒亦檢查更新。
 - 在成本面板修改入貨單價、查看成本紀錄、更改密碼。改密碼即撤銷所有解鎖令牌。更新價格有並行修改檢查。
 - bcrypt（成本係數 12）儲存密碼雜湊；32 位元組隨機令牌在資料庫只存 SHA-256，伺服器驗證令牌及撤銷狀態。8 次失敗後於 5 分鐘視窗內暫停驗證；全站共用限制，避免換裝置繞過，但亦可能被惡意人士暫時耗盡。
-- 密碼最少 4 字元，可用四位數字（包括前置零），UTF-8 最多 72 位元組。只有知道密碼的人可查看／修改成本；共享密碼不會識別個別操作員。員工其他功能繼續免登入，仍應只使用測試資料。
+- 密碼最少 4 字元，可用四位數字（包括前置零），UTF-8 最多 72 位元組。只有知道密碼的人可查看／修改成本；共享密碼不會識別個別操作員。員工其他功能現需登入；成本密碼是額外保護，仍應只使用測試資料。
 - 未設定初始密碼時成本預設鎖定，網站無公開「首次設定」入口。由專案擁有人在 Supabase SQL Editor 設定或忘記密碼時重設；不要將真實密碼或雜湊提交 GitHub：
 
 ```sql
@@ -186,3 +186,15 @@ commit;
 - 主頁只保留搜尋、貨品管理、入倉及出倉；原有統計、補貨及滯銷觀察移至「倉存分析」。
 - 頁首「上一頁」保留原頁搜尋及篩選，還原捲動位置。庫存查詢切頁仍保留品牌、倉庫、排列及頁碼；主頁重新搜尋會建立新查詢。
 - 返回不會清空未提交批次，亦不會重新提交交易。無資料庫變更。
+
+### 2026-10-18 帳戶登入
+- `src/StaffAuth.tsx`：Supabase Auth 登入名稱／密碼、登入恢復、定期權限核對及設定頁更改密碼；沒有公開註冊入口。
+- 登入名稱會正規化成小寫，內部 Auth email 為 `<username>@login.starlighting.invalid`，不發送郵件。忘記密碼由專案管理員透過 Auth Admin API 重設。成本密碼保持獨立。
+- `20261018082014_require_staff_login.sql`：私密員工名單、全部表 restrictive RLS、全部既有 RPC 首先驗證員工及有效 auth session、撤銷匿名存取。歷史資料保留。
+- 管理員新增帳戶：先用 Supabase Auth Admin `createUser` 設定上述內部 email、password 及 email_confirm=true，再在 SQL Editor 將該 user UUID 與 username 加入 inventory_private.staff_accounts。停用時設 active=false 並撤銷 Auth sessions。不要使用 user_metadata 作授權。
+- `src/usePrivateImages.ts`：透過帶登入令牌的 Storage download 取得圖片，登出卸載時撤銷本機 blob URL。圖片 bucket 現為 private；舊的公共圖片連結不再可用。
+- 首個帳戶由臨時、隨機密鑰保護的管理端建立；部署後設定端點已關閉，沒有初始密碼、管理密鑰或 service_role 寫入 GitHub。
+- 本機 57 項測試；新增匿名拒絕、未授權拒絕、員工正常操作、私密圖片、保留成本鎖、停用及撤銷 session 測試。
+- Security advisor 的私密表無政策提示是刻意 default-deny；已登入可執行 SECURITY DEFINER 的提示是經驗證的 RPC 設計，每個函式均先檢查員工身份與 session。參考 https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable 。
+- Auth 的外洩密碼檢查尚未啟用，可在方案支援時由管理員啟用：https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection 。
+- 舊版頁面需重新整理才會顯示登入。實體手機相機及版面仍需驗收。
