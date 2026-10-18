@@ -6,8 +6,8 @@ let db:PGlite;
 const user='11111111-1111-4111-8111-111111111111',session='22222222-2222-4222-8222-222222222222';
 beforeAll(async()=>{
  db=new PGlite({extensions:{pgcrypto}});
- await db.exec(`create role anon;create role authenticated;create schema extensions;create extension pgcrypto with schema extensions;
- create schema auth;create table auth.users(id uuid primary key,banned_until timestamptz);create table auth.sessions(id uuid primary key,user_id uuid);
+ await db.exec(`create role anon;create role authenticated;create role service_role;create schema extensions;create extension pgcrypto with schema extensions;
+ create schema auth;create table auth.users(id uuid primary key,banned_until timestamptz,email text,raw_app_meta_data jsonb);create table auth.sessions(id uuid primary key,user_id uuid);
  create function auth.uid() returns uuid language sql as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
  create function auth.jwt() returns jsonb language sql as $$select jsonb_build_object('session_id',current_setting('request.jwt.claim.session_id',true))$$;
  grant usage on schema auth to authenticated;grant execute on all functions in schema auth to authenticated;
@@ -50,11 +50,23 @@ it('已授權員工可操作庫存，相片有保護，成本仍需另一密碼'
  const id=(await db.query<{id:string}>('select id from products limit 1')).rows[0].id;const wh=(await db.query<{id:string}>('select id from warehouses limit 1')).rows[0].id;
  await db.query('select process_inventory_batch($1,$2,$3::jsonb,$4,$5)',['in',wh,JSON.stringify([{product_id:id,quantity:2}]),crypto.randomUUID(),'登入測試']);
  expect((await db.query('select quantity from inventory where product_id=$1',[id])).rows).toEqual([{quantity:2}]);
- await expect(db.query("select * from read_product_costs('invalid')")).rejects.toThrow('成本已鎖定');
+ await expect(db.query("select * from read_product_costs('invalid')")).rejects.toThrow('老細帳戶');
  await db.exec("insert into storage.objects(bucket_id,name)values('product-images','test.jpg')");
  expect((await db.query('select * from storage.objects')).rows).toHaveLength(1);
  }finally{await db.exec('reset role');}
  expect((await db.query("select public from storage.buckets where id='product-images'")).rows).toEqual([{public:false}]);
+});
+it('員工不可管理帳戶或透過舊成本密碼取得成本；老細毋須成本密碼',async()=>{
+ await db.exec('set role authenticated');try{
+ await expect(db.query('select * from list_staff_accounts()')).rejects.toThrow('老細帳戶');
+ await expect(db.query("select unlock_product_costs('1234')")).rejects.toThrow('老細帳戶');
+ await expect(db.query("select complete_staff_account(null,null,'test',gen_random_uuid())")).rejects.toThrow('permission denied');
+ }finally{await db.exec('reset role');}
+ await db.exec("update inventory_private.staff_accounts set role='boss';set role authenticated");try{
+ expect((await db.query<{p:any}>('select staff_profile() as p')).rows[0].p.role).toBe('boss');
+ expect((await db.query("select * from read_product_costs('boss')")).rows).toHaveLength(1);
+ expect((await db.query('select * from list_staff_accounts()')).rows).toHaveLength(1);
+ }finally{await db.exec("reset role;update inventory_private.staff_accounts set role='staff'");}
 });
 it('停用帳戶及已撤銷登入工作階段立即拒絕存取',async()=>{
  await db.exec('update inventory_private.staff_accounts set active=false');await db.exec('set role authenticated');
@@ -64,5 +76,5 @@ it('停用帳戶及已撤銷登入工作階段立即拒絕存取',async()=>{
 });
 it('所有公開庫存 RPC 均有伺服器授權檢查',async()=>{
  const functions=(await db.query<{proname:string;prosrc:string}>("select proname,prosrc from pg_proc join pg_namespace n on n.oid=pronamespace where n.nspname='public' and prosecdef")).rows;
- expect(functions).toHaveLength(12);expect(functions.every(f=>f.prosrc.includes('perform inventory_private.require_staff();'))).toBe(true);
+ expect(functions).toHaveLength(15);expect(functions.filter(f=>f.proname!=='complete_staff_account').every(f=>f.prosrc.includes('perform inventory_private.require_staff();')||f.prosrc.includes('perform inventory_private.require_boss();'))).toBe(true);
 });

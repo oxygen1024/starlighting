@@ -2,17 +2,17 @@ import {useEffect,useState,type ReactNode} from 'react';
 import type {Session} from '@supabase/supabase-js';
 import {db} from './db';
 export function loginEmail(name:string){const clean=name.trim().toLowerCase();if(!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(clean))throw new Error('請輸入有效登入名稱（英文字母、數字、點、底線或連字號）。');return clean+'@login.starlighting.invalid';}
-export default function StaffAuth({children}:{children:(name:string)=>ReactNode}){
- const [session,setSession]=useState<Session|null>(null),[checking,setChecking]=useState(true),[name,setName]=useState(''),[error,setError]=useState('');
+export default function StaffAuth({children}:{children:(name:string,role:string)=>ReactNode}){
+ const [session,setSession]=useState<Session|null>(null),[checking,setChecking]=useState(true),[name,setName]=useState(''),[role,setRole]=useState('staff'),[error,setError]=useState('');
  useEffect(()=>{if(!db){setChecking(false);setError('資料庫未設定，請聯絡管理員。');return;}let alive=true,version=0;
- async function verify(s:Session|null){const v=++version;setSession(s);setName('');setChecking(Boolean(s));if(!s){sessionStorage.removeItem('starlighting-cost-unlock');return;}const r=await db!.rpc('staff_session');if(!alive||v!==version)return;setChecking(false);if(r.error){setError('登入已失效或帳戶未獲授權，請重新登入。');}else{setName(r.data);setError('');}}
+ async function verify(s:Session|null){const v=++version;setSession(s);setName('');setChecking(Boolean(s));if(!s){sessionStorage.removeItem('starlighting-cost-unlock');return;}const r=await db!.rpc('staff_profile');if(!alive||v!==version)return;setChecking(false);if(r.error){setError('登入已失效或帳戶未獲授權，請重新登入。');}else{setName(r.data.username);setRole(r.data.role);setError('');}}
  // Keep auth callbacks synchronous; verification runs outside the auth lock.
  const {data:{subscription}}=db.auth.onAuthStateChange((event,s)=>{if(event==='TOKEN_REFRESHED'||event==='USER_UPDATED'){if(alive)setSession(s);return;}if(alive)setTimeout(()=>{if(alive)void verify(s);},0);});
  void db.auth.getSession().then(({data,error})=>{if(!alive)return;if(error){setError('未能恢復登入，請重新登入。');setChecking(false);}else void verify(data.session);});
- const timer=setInterval(()=>{void db!.auth.getSession().then(({data})=>{if(alive&&data.session)void db!.rpc('staff_session').then(r=>{if(alive&&r.error){setName('');setError('帳戶權限已變更，請重新登入。');}});});},30000);
+ const timer=setInterval(()=>{void db!.auth.getSession().then(({data})=>{if(alive&&data.session)void db!.rpc('staff_profile').then(r=>{if(alive&&r.error){setName('');setError('帳戶權限已變更，請重新登入。');}else if(alive&&r.data){setRole(r.data.role);}});});},30000);
  return()=>{alive=false;subscription.unsubscribe();clearInterval(timer);};},[]);
  if(checking)return <main className="login-page"><div className="panel" role="status">正在確認登入…</div></main>;
- if(session&&name)return <>{children(name)}</>;
+ if(session&&name)return <>{children(name,role)}</>;
  return <LoginForm error={error} onError={setError}/>;
 }
 function LoginForm({error,onError}:{error:string;onError:(s:string)=>void}){

@@ -198,3 +198,11 @@ commit;
 - Security advisor 的私密表無政策提示是刻意 default-deny；已登入可執行 SECURITY DEFINER 的提示是經驗證的 RPC 設計，每個函式均先檢查員工身份與 session。參考 https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable 。
 - Auth 的外洩密碼檢查尚未啟用，可在方案支援時由管理員啟用：https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection 。
 - 舊版頁面需重新整理才會顯示登入。實體手機相機及版面仍需驗收。
+
+### 老細角色及新增員工帳戶
+- `20261018082702_boss_accounts.sql` 增加私密 `role`（boss / staff）。現有 starlighting 帳戶已由管理端升級老細，密碼不變；新安裝須由資料庫管理員指定首位老細。
+- 老細登入後直接查看、修改及匯入成本，不再依賴成本共用密碼；普通員工即使知道舊成本密碼或令牌也不能取得成本。角色由伺服器私密名單核對，不使用可修改的 user_metadata。
+- 設定頁「員工帳戶管理」可新增普通員工及查看帳戶清單；沒有公開註冊、升級老細或重設別人密碼入口。
+- 部署 `supabase/functions/create-staff-account/index.ts`。verify_jwt=false 是因函式自行呼叫 Auth /user 驗證令牌，再核對 staff_profile 老細權限；只有服務端使用環境內的 service_role。
+- Auth 建立與名單啟用分兩步，未完成名單啟用時無庫存權限。重試識別碼存在 Auth 的管理端 metadata，安全重試不重複建立帳戶；最終啟用再次檢查老細及有效 session，且只能建立 staff。
+- `src/BossAccounts.tsx` 新增帳戶 UI；`StaffAuth.tsx` 載入及定期核對角色；`CostAccess.tsx` 按老細角色載入成本。
