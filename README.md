@@ -211,3 +211,9 @@ commit;
 - 移除頁首管理成本及貨品詳情查看成本按鈕。老細於詳情直接見入貨單價；修改單價移至設定頁「入貨單價設定」。
 - `20261018083324_actor_history_and_account_name.sql` 為批次及貨品操作紀錄加入 actor_id / actor_username。伺服器 trigger 取 auth.uid()，保留當時登入名稱，舊資料不推測操作人。交易匯出 CSV 及列印亦帶操作人。
 - 設定頁可修改自己登入名稱及密碼。`change-login-name` Edge Function 驗證 Auth user 與員工 session，只更新當前使用者；Auth email 與私密登入名稱透過 trigger 同一交易變更，重名失敗全部回退。角色及庫存資料不變，舊紀錄保留舊名稱。
+
+### 老細重設密碼及停用員工
+- 設定 → 員工帳戶管理，新增重設密碼、停用、重新啟用，操作前有確認。只可管理普通員工，不能透過此入口改自己或其他老細。
+- `20261018083856_manage_staff_access.sql`：老細驗證、員工目標驗證、狀態切換及撤銷 auth.sessions。停用立即被資料庫拒絕，重新啟用不會復活舊 session。保留帳戶及原有操作紀錄。
+- `reset-staff-password` Edge Function 自行驗證 Auth user、老細權限及目標角色，透過服務端 Auth Admin API 更新密碼，再撤銷所有目標 session。service_role 只在服務端環境，前端不能讀取密碼或密碼雜湊。
+- 密碼更新若遇網絡不明結果，保留相同目標及新密碼供安全重試；不會自動重新啟用停用帳戶。

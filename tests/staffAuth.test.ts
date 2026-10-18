@@ -86,6 +86,22 @@ it('操作人由登入身份記錄，改名後舊紀錄保留名稱；重名會�
  expect((await db.query("select actor_username from product_activity_log where action='updated' order by created_at desc limit 1")).rows).toEqual([{actor_username:'renamed'}]);
  }finally{await db.exec('reset role');}
 });
+it('只有老細可停用、啟用及撤銷員工登入；不能管理自己或其他老細',async()=>{
+ const target='44444444-4444-4444-8444-444444444444',sid='55555555-5555-4555-8555-555555555555';
+ await db.query('insert into auth.sessions values($1,$2)',[sid,target]);
+ await db.exec('set role authenticated');try{await expect(db.query('select set_staff_active($1,false)',[target])).rejects.toThrow('老細帳戶');}finally{await db.exec('reset role');}
+ await db.query("update inventory_private.staff_accounts set role='boss' where user_id=$1",[user]);await db.exec('set role authenticated');try{
+ await expect(db.query('select set_staff_active($1,false)',[user])).rejects.toThrow('普通員工');
+ await expect(db.query('select revoke_staff_sessions($1)',[user])).rejects.toThrow('普通員工');
+ await db.query('select set_staff_active($1,false)',[target]);
+ }finally{await db.exec('reset role');}
+ expect((await db.query('select active from inventory_private.staff_accounts where user_id=$1',[target])).rows).toEqual([{active:false}]);
+ expect((await db.query('select * from auth.sessions where user_id=$1',[target])).rows).toHaveLength(0);
+ await db.exec('set role authenticated');try{await db.query('select set_staff_active($1,true)',[target]);}finally{await db.exec('reset role');}
+ expect((await db.query('select active from inventory_private.staff_accounts where user_id=$1',[target])).rows).toEqual([{active:true}]);
+ expect((await db.query('select * from auth.sessions where user_id=$1',[target])).rows).toHaveLength(0);
+ await db.query("update inventory_private.staff_accounts set role='staff' where user_id=$1",[user]);
+});
 it('停用帳戶及已撤銷登入工作階段立即拒絕存取',async()=>{
  await db.exec('update inventory_private.staff_accounts set active=false');await db.exec('set role authenticated');
  try{await expect(db.query('select staff_session()')).rejects.toThrow('已授權');expect((await db.query('select * from products')).rows).toEqual([]);}finally{await db.exec('reset role');}
@@ -94,5 +110,5 @@ it('停用帳戶及已撤銷登入工作階段立即拒絕存取',async()=>{
 });
 it('所有公開庫存 RPC 均有伺服器授權檢查',async()=>{
  const functions=(await db.query<{proname:string;prosrc:string}>("select proname,prosrc from pg_proc join pg_namespace n on n.oid=pronamespace where n.nspname='public' and prosecdef")).rows;
- expect(functions).toHaveLength(15);expect(functions.filter(f=>f.proname!=='complete_staff_account').every(f=>f.prosrc.includes('perform inventory_private.require_staff();')||f.prosrc.includes('perform inventory_private.require_boss();'))).toBe(true);
+ expect(functions).toHaveLength(19);expect(functions.filter(f=>f.proname!=='complete_staff_account').every(f=>f.prosrc.includes('perform inventory_private.require_staff();')||f.prosrc.includes('perform inventory_private.require_boss();'))).toBe(true);
 });
