@@ -1,3 +1,4 @@
+import {timedRead,refreshQueue} from './readRequests';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {db} from './db';
 import {matchesText,type Product} from './core';
@@ -10,8 +11,13 @@ export function useCostAccess(isBoss:boolean){
  const [costs,setCosts]=useState<Record<string,number>>({}),[error,setError]=useState(''),[open,setOpen]=useState(false),[ready,setReady]=useState(false);
  const version=useRef(0);
  const lock=useCallback(()=>{version.current++;setCosts({});setReady(false);setOpen(false);sessionStorage.removeItem('starlighting-cost-unlock');},[]);
- const refresh=useCallback(async()=>{if(!db||!isBoss)return;const v=++version.current;try{const values:Record<string,number>={};for(let offset=0;;offset+=1000){const r=await db.rpc('read_product_costs',{p_token:'boss',p_offset:offset});if(r.error)throw r.error;for(const c of r.data as Cost[])values[c.product_id]=Number(c.purchase_price);if(r.data.length<1000)break;}if(v===version.current){setCosts(values);setReady(true);setError('');}}catch(e){if(v===version.current){setCosts({});setReady(false);setError((e as Error).message);}}},[isBoss]);
- useEffect(()=>{if(!isBoss){lock();return;}void refresh();const timer=setInterval(refresh,30000);const channel=db?.channel('boss-costs').on('postgres_changes',{event:'UPDATE',schema:'public',table:'cost_revision'},()=>void refresh()).subscribe();window.addEventListener('focus',refresh);return()=>{version.current++;clearInterval(timer);window.removeEventListener('focus',refresh);if(channel)void db!.removeChannel(channel);};},[isBoss,refresh,lock]);
+ const readCosts=useCallback(async()=>{if(!db||!isBoss)return;const v=++version.current;try{const values:Record<string,number>={};for(let offset=0;;offset+=1000){const r=await timedRead(signal=>db!.rpc('read_product_costs',{p_token:'boss',p_offset:offset}).abortSignal(signal));if(r.error)throw r.error;for(const c of r.data as Cost[])values[c.product_id]=Number(c.purchase_price);if(r.data.length<1000)break;}if(v===version.current){setCosts(values);setReady(true);setError('');}}catch(e){if(v===version.current){setCosts({});setReady(false);setError((e as Error).message);}}},[isBoss]);
+ const worker=useRef<ReturnType<typeof refreshQueue>|null>(null);
+ const refresh=useCallback(()=>worker.current?.run()??Promise.resolve(),[]);
+ useEffect(()=>{if(!isBoss){lock();return;}const queue=refreshQueue(readCosts);worker.current=queue;void queue.run();
+ const poll=()=>{if(document.visibilityState==='visible'&&navigator.onLine)void queue.run();};
+ const timer=setInterval(poll,60000);const channel=db?.channel('boss-costs').on('postgres_changes',{event:'UPDATE',schema:'public',table:'cost_revision'},poll).subscribe();window.addEventListener('online',poll);document.addEventListener('visibilitychange',poll);
+ return()=>{queue.stop();worker.current=null;version.current++;clearInterval(timer);window.removeEventListener('online',poll);document.removeEventListener('visibilitychange',poll);if(channel)void db!.removeChannel(channel);};},[isBoss,readCosts,lock]);
  return {session,costs,error,setError,open,setOpen,ready,lock,refresh};
 }
 type Access=ReturnType<typeof useCostAccess>;
