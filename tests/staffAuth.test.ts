@@ -112,3 +112,21 @@ it('所有公開庫存 RPC 均有伺服器授權檢查',async()=>{
  const functions=(await db.query<{proname:string;prosrc:string}>("select proname,prosrc from pg_proc join pg_namespace n on n.oid=pronamespace where n.nspname='public' and prosecdef")).rows;
  expect(functions).toHaveLength(19);expect(functions.filter(f=>f.proname!=='complete_staff_account').every(f=>f.prosrc.includes('perform inventory_private.require_staff();')||f.prosrc.includes('perform inventory_private.require_boss();'))).toBe(true);
 });
+it('新增貨品同成本原子儲存、保留規格、防重複及拒絕員工設定成本',async()=>{
+ await db.query('insert into auth.sessions values($1,$2)',[session,user]);
+ await db.query("update inventory_private.staff_accounts set role='boss',active=true where user_id=$1",[user]);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claim.session_id',$2,false)",[user,session]);
+ const key='77777777-7777-4777-8777-777777777777',id='88888888-8888-4888-8888-888888888888';
+ const items=JSON.stringify([{id,name:'新增連成本',brand:'Svitac',category:'筒燈',quantity:0,purchase_price:12.34,selling_price:25.5,low_stock:3,location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格'}]);
+ await db.exec('set role authenticated');try{
+ await db.query("select import_products_with_stock($1,null,$2,'boss')",[key,items]);
+ await db.query("select import_products_with_stock($1,null,$2,'boss')",[key,items]);
+ }finally{await db.exec('reset role');}
+ expect((await db.query('select name,location,wattage,color_temperature,specifications,selling_price::text,low_stock from products where id=$1',[id])).rows).toEqual([{name:'新增連成本',location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格',selling_price:'25.50',low_stock:3}]);
+ expect((await db.query('select purchase_price::text from inventory_private.product_costs where product_id=$1',[id])).rows).toEqual([{purchase_price:'12.34'}]);
+ const bad='99999999-9999-4999-8999-999999999999';
+ await db.exec('set role authenticated');try{await expect(db.query("select import_products_with_stock(gen_random_uuid(),null,$1,'boss')",[JSON.stringify([{id:bad,name:'無效成本',purchase_price:-1}])])).rejects.toThrow();}finally{await db.exec('reset role');}
+ expect((await db.query('select id from products where id=$1',[bad])).rows).toHaveLength(0);
+ await db.query("update inventory_private.staff_accounts set role='staff' where user_id=$1",[user]);
+ await db.exec('set role authenticated');try{await expect(db.query("select import_products_with_stock(gen_random_uuid(),null,$1,'boss')",[JSON.stringify([{id:bad,name:'越權成本',purchase_price:10}])])).rejects.toThrow('老細');}finally{await db.exec('reset role');}
+});
