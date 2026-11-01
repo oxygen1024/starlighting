@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {dailyMovement,hkDay,inventoryRows,filterInventory,inventoryExport,pickRows,pickCheckKey,stockIndex,type StockFilters} from '../src/warehouse';
+import {productColours,dailyMovement,hkDay,inventoryRows,filterInventory,inventoryExport,pickRows,pickCheckKey,stockIndex,type StockFilters} from '../src/warehouse';
 import {csv,type Product} from '../src/core';
 const product=(id:string,values:Partial<Product>={}):Product=>({id,name:'單 So',sku:id,barcode:'00123'+id,category:'配件',brand:'測試',wattage:'',color_temperature:'',specifications:'',location:'A2',selling_price:10,low_stock:3,created_at:'2026-10-01T00:00:00Z',...values});
 const products=[product('a'),product('b',{name:'筒燈',location:'A10'}),product('c',{name:'燈帶',location:''})];
@@ -23,4 +23,23 @@ describe('庫存查詢與匯出',()=>{
 describe('出倉執貨核對',()=>{
  it('按貨架排序，沿用當倉最新庫存，已刪貨品不會變成虛構清單行',()=>{const rows=pickRows([{product_id:'b',quantity:1},{product_id:'a',quantity:2},{product_id:'deleted',quantity:1}],products,inventory,'one');expect(rows.map(r=>[r.product.id,r.quantity,r.available])).toEqual([['a',2,2],['b',1,0]]);});
  it('改數量、條碼或倉庫會令舊核對失效',()=>{const row=pickRows([{product_id:'a',quantity:2}],products,inventory,'one')[0];const key=pickCheckKey(row,'one');expect(pickCheckKey({...row,quantity:3},'one')).not.toBe(key);expect(pickCheckKey(row,'two')).not.toBe(key);expect(pickCheckKey({...row,product:{...row.product,barcode:'new'}},'one')).not.toBe(key);});
+});
+
+describe('庫存顏色篩選',()=>{
+ it('識別括號、獨立字及顏色標示，不推斷色溫或型號',()=>{
+  expect(productColours('1位(白) KB31-1-WE')).toEqual(['白色']);
+  expect(productColours('燈掣（黑色）')).toEqual(['黑色']);
+  expect(productColours('Schneider 白 單蘇')).toEqual(['白色']);
+  expect(productColours('黑色筒燈')).toEqual(['黑色']);
+  expect(productColours('筒燈 白光 6500K WE')).toEqual(['未標示顏色']);
+  expect(productColours('燈掣(黑/白)')).toEqual(['白色','黑色']);
+ });
+ it('顏色與品牌、名稱、倉庫數量及庫存篩選合用，清除可恢復全部',()=>{
+  const ps=[product('a',{name:'燈掣(白)'}),product('b',{name:'燈掣(黑)'}),product('c',{name:'燈掣'})];
+  const rows=inventoryRows(ps,inventory,'one');
+  expect(filterInventory(rows,{...filters,color:'白色',brand:'測試',query:'燈掣',state:'available'}).map(x=>x.product.id)).toEqual(['a']);
+  expect(filterInventory(rows,{...filters,color:'黑色',state:'available'})).toHaveLength(0);
+  expect(filterInventory(rows,{...filters,color:'未標示顏色'}).map(x=>x.product.id)).toEqual(['c']);
+  expect(filterInventory(rows,{...filters,color:''})).toHaveLength(3);
+ });
 });
