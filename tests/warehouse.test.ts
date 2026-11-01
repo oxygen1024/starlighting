@@ -27,6 +27,7 @@ describe('出倉執貨核對',()=>{
 
 describe('庫存顏色篩選',()=>{
  it('識別括號、獨立字及顏色標示，不推斷色溫或型號',()=>{
+  expect(productColours('1位(白) KB31-1-WE','磨砂黑')).toEqual(['磨砂黑']);
   expect(productColours('1位(白) KB31-1-WE')).toEqual(['白色']);
   expect(productColours('燈掣（黑色）')).toEqual(['黑色']);
   expect(productColours('Schneider 白 單蘇')).toEqual(['白色']);

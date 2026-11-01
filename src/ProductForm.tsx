@@ -1,12 +1,13 @@
 import React,{useState} from 'react';
 import {ScanLine} from 'lucide-react';
+import {productColours} from './warehouse';
 import type {Product} from './core';
 const Scanner=React.lazy(()=>import('./Scanner'));
-const defaults:Record<string,string[]>={brand:['Svitac'],category:['LED 筒燈','LED 射燈','路軌燈','燈帶','燈膽','燈頭','火牛／驅動器','吸頂燈','戶外燈','配件'],wattage:[],color_temperature:['2700K','3000K','4000K','6500K']};
-function Choice({name,label,value,products}:{name:string;label:string;value:string;products:Product[]}){
+const defaults:Record<string,string[]>={color:['白色','黑色','灰色','銀色','金色','銅色','紅色','藍色','綠色','黃色','啡色','透明','其他／不適用'],brand:['Svitac'],category:['LED 筒燈','LED 射燈','路軌燈','燈帶','燈膽','燈頭','火牛／驅動器','吸頂燈','戶外燈','配件'],wattage:[],color_temperature:['2700K','3000K','4000K','6500K']};
+function Choice({name,label,value,products,required=false,disabled=false}:{name:string;label:string;value:string;products:Product[];required?:boolean;disabled?:boolean}){
  const options=[...new Set([...(defaults[name]??[]),...products.map(p=>String(p[name as keyof Product]??'')),value])].filter(Boolean).sort((a,b)=>a.localeCompare(b,'zh-HK'));
  const [custom,setCustom]=useState(false);
- return <label>{label}{custom?<><input name={name} aria-label={'新增'+label} placeholder={'輸入新'+label} autoFocus/><button type="button" onClick={()=>setCustom(false)}>返回選擇</button></>:<select name={name} defaultValue={value} onChange={e=>{if(e.target.value==='__new__')setCustom(true);}}><option value="">請選擇{label}</option>{options.map(v=><option key={v} value={v}>{v}</option>)}<option value="__new__">＋ 新增{label}</option></select>}</label>;
+ return <label>{label}{custom?<><input name={name} required={required} disabled={disabled} maxLength={100} pattern=".*\S.*" aria-label={'新增'+label} placeholder={'輸入新'+label} autoFocus/><button type="button" onClick={()=>setCustom(false)}>返回選擇</button></>:<select name={name} required={required} disabled={disabled} defaultValue={value} onChange={e=>{if(e.target.value==='__new__')setCustom(true);}}><option value="">請選擇{label}</option>{options.map(v=><option key={v} value={v}>{v}</option>)}<option value="__new__">＋ 新增{label}</option></select>}</label>;
 }
 export default function ProductForm({product,products,busy,error,canSetCost=false,onSave}:{product:Product|null;products:Product[];busy:boolean;error:string;canSetCost?:boolean;onSave:(e:React.FormEvent<HTMLFormElement>)=>void}){
  const [barcode,setBarcode]=useState(product?.barcode??'');const [scanning,setScanning]=useState(false);const [message,setMessage]=useState('');
@@ -19,6 +20,6 @@ export default function ProductForm({product,products,busy,error,canSetCost=fals
  <Choice name="brand" label="品牌" value={product?.brand??''} products={products}/><Choice name="category" label="種類" value={product?.category??''} products={products}/>
  {[['name','貨品名稱'],['location','貨架位置'],['selling_price','售價'],['low_stock','低庫存提示數量']].map(([k,label])=><label key={k}>{label}<input name={k} disabled={busy} required={k!=='location'} type={['selling_price','low_stock'].includes(k)?'number':'text'} min="0" step={k==='low_stock'?'1':'0.01'} defaultValue={product?.[k as keyof Product]??(['selling_price'].includes(k)?0:k==='low_stock'?5:'')}/></label>)}
  {!product&&canSetCost&&<label>入貨單價（成本／港元）<input name="purchase_price" type="number" min="0" max="9999999999.99" step="0.01" defaultValue="0" required disabled={busy}/><small>只供老細查看及修改，會與貨品一併儲存。</small></label>}
- <Choice name="wattage" label="功率" value={product?.wattage??''} products={products}/><Choice name="color_temperature" label="色溫" value={product?.color_temperature??''} products={products}/>
+ <Choice name="color" label="顏色" value={product?.color|| (product?productColours(product.name).filter(c=>c!=='未標示顏色').join('／'):'')} products={products} required disabled={busy}/><Choice name="wattage" label="功率" value={product?.wattage??''} products={products}/><Choice name="color_temperature" label="色溫" value={product?.color_temperature??''} products={products}/>
  <label className="span2">其他規格<textarea name="specifications" defaultValue={product?.specifications}/></label>{error&&<p role="alert" className="danger span2">{error}</p>}<button className="primary span2" disabled={busy||Boolean(duplicate)}>{busy?'儲存中…':'儲存貨品'}</button></form>;
 }

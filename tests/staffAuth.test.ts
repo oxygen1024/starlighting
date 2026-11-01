@@ -117,16 +117,26 @@ it('新增貨品同成本原子儲存、保留規格、防重複及拒絕員工�
  await db.query("update inventory_private.staff_accounts set role='boss',active=true where user_id=$1",[user]);
  await db.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claim.session_id',$2,false)",[user,session]);
  const key='77777777-7777-4777-8777-777777777777',id='88888888-8888-4888-8888-888888888888';
- const items=JSON.stringify([{id,name:'新增連成本',brand:'Svitac',category:'筒燈',quantity:0,purchase_price:12.34,selling_price:25.5,low_stock:3,location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格'}]);
+ const items=JSON.stringify([{id,name:'新增連成本',color:'香檳金',brand:'Svitac',category:'筒燈',quantity:0,purchase_price:12.34,selling_price:25.5,low_stock:3,location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格'}]);
  await db.exec('set role authenticated');try{
  await db.query("select import_products_with_stock($1,null,$2,'boss')",[key,items]);
  await db.query("select import_products_with_stock($1,null,$2,'boss')",[key,items]);
  }finally{await db.exec('reset role');}
- expect((await db.query('select name,location,wattage,color_temperature,specifications,selling_price::text,low_stock from products where id=$1',[id])).rows).toEqual([{name:'新增連成本',location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格',selling_price:'25.50',low_stock:3}]);
+ expect((await db.query('select name,color,location,wattage,color_temperature,specifications,selling_price::text,low_stock from products where id=$1',[id])).rows).toEqual([{name:'新增連成本',color:'香檳金',location:'A1',wattage:'24W',color_temperature:'4000K',specifications:'測試規格',selling_price:'25.50',low_stock:3}]);
  expect((await db.query('select purchase_price::text from inventory_private.product_costs where product_id=$1',[id])).rows).toEqual([{purchase_price:'12.34'}]);
  const bad='99999999-9999-4999-8999-999999999999';
  await db.exec('set role authenticated');try{await expect(db.query("select import_products_with_stock(gen_random_uuid(),null,$1,'boss')",[JSON.stringify([{id:bad,name:'無效成本',purchase_price:-1}])])).rejects.toThrow();}finally{await db.exec('reset role');}
  expect((await db.query('select id from products where id=$1',[bad])).rows).toHaveLength(0);
  await db.query("update inventory_private.staff_accounts set role='staff' where user_id=$1",[user]);
  await db.exec('set role authenticated');try{await expect(db.query("select import_products_with_stock(gen_random_uuid(),null,$1,'boss')",[JSON.stringify([{id:bad,name:'越權成本',purchase_price:10}])])).rejects.toThrow('老細');}finally{await db.exec('reset role');}
+});
+
+it('顏色可修改並留下操作紀錄，長度限制在資料庫生效',async()=>{
+ const id='88888888-8888-4888-8888-888888888888';
+ await db.exec('set role authenticated');try{
+ await db.query('update products set color=$1 where id=$2',['磨砂黑',id]);
+ await expect(db.query('update products set color=$1 where id=$2',['色'.repeat(101),id])).rejects.toThrow();
+ }finally{await db.exec('reset role');}
+ expect((await db.query('select color from products where id=$1',[id])).rows).toEqual([{color:'磨砂黑'}]);
+ expect((await db.query("select after_data->>'color' color from product_activity_log where product_id=$1 and action='updated' order by created_at desc limit 1",[id])).rows).toEqual([{color:'磨砂黑'}]);
 });
