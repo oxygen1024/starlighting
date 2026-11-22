@@ -12,4 +12,14 @@ export function matchesText(value:string,query:string){
  const text=searchText(value),term=searchText(query);
  return text.includes(term)||searchAlias(text).includes(searchAlias(term));
 }
-export function matches(p:Product,query:string,filters:Record<string,string>){return [p.name,p.barcode??''].some(value=>matchesText(value,query))&&Object.entries(filters).every(([k,v])=>!v||String(p[k as keyof Product])===v);}
+// Match each keyword in any searchable field, while retaining space-insensitive names.
+export function matchesProductQuery(p:Product,query:string){
+ const fields=[p.name,p.barcode,p.brand,p.category,p.color,p.wattage,p.color_temperature,p.specifications,p.location].map(v=>v??'');
+ if(fields.some(value=>matchesText(value,query)))return true;
+ const terms=query.normalize('NFKC').trim().split(/\s+/u).filter(Boolean);
+ return terms.every(term=>fields.some(value=>matchesText(value,term)));
+}
+export const UNSET_COLOR='__unset_color__';
+export function matches(p:Product,query:string,filters:Record<string,string>){
+ return matchesProductQuery(p,query)&&Object.entries(filters).every(([k,v])=>!v||(k==='color'&&v===UNSET_COLOR?!p.color?.trim():String(p[k as keyof Product]??'').trim()===v));
+}

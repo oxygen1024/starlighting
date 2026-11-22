@@ -272,3 +272,8 @@
  .navigation-hidden .batch-footer{bottom:env(safe-area-inset-bottom)}
 }
 @media(prefers-reduced-motion:reduce){.mobile-bottom-nav,.batch-footer{transition:none}}
+
+/* Product keyword search stays usable with the phone keyboard open. */
+.filters .search input{min-width:0;flex:1}
+.filters .search button{min-width:44px;min-height:44px;padding:8px;flex-shrink:0}
+.product-search-help{grid-column:1 / -1;font-size:0.9rem;flex-basis:100%;color:var(--muted,#64748b);line-height:1.5}
