@@ -11,7 +11,7 @@ export function stockIndex(inventory:StockRow[],warehouse=''){
 }
 export function inventoryRows(products:Product[],inventory:StockRow[],warehouse=''):InventoryRow[]{
  const amounts=stockIndex(inventory,warehouse);
- return products.map(product=>{const quantity=amounts.get(product.id)??0;return {product,quantity,state:quantity===0?'empty':quantity<=product.low_stock?'low':'available'};});
+ return products.map(product=>{const quantity=amounts.get(product.id)??0;return {product,quantity,state:quantity===0?'empty':quantity<product.low_stock?'low':'available'};});
 }
 // Classify explicit colour labels only; never infer housing colour from colour temperature or model codes.
 export function productColours(name:string,color?:string):string[]{
@@ -24,7 +24,7 @@ export function productColours(name:string,color?:string):string[]{
 export type StockFilters={query:string;color?:string;category:string;brand:string;location:string;state:string;sort:string};
 export function filterInventory(rows:InventoryRow[],filter:StockFilters){
  const compare=new Intl.Collator('zh-HK',{numeric:true,sensitivity:'base'});
- return rows.filter(({product:p,state,quantity})=>(!filter.query||[p.name,p.barcode??'',p.brand,p.category,p.location,p.wattage,p.color_temperature].some(v=>matchesText(v,filter.query)))&&(!filter.color||productColours(p.name,p.color).includes(filter.color))&&(!filter.category||p.category===filter.category)&&(!filter.brand||p.brand===filter.brand)&&(!filter.location||p.location===filter.location)&&(!filter.state||(filter.state==='attention'?state!=='available':filter.state==='available'?quantity>0:state===filter.state)))
+ return rows.filter(({product:p,state,quantity})=>(!filter.query||[p.name,p.barcode??'',p.brand,p.category,p.location,p.wattage,p.color_temperature].some(v=>matchesText(v,filter.query)))&&(!filter.color||productColours(p.name,p.color).includes(filter.color))&&(!filter.category||p.category===filter.category)&&(!filter.brand||p.brand===filter.brand)&&(!filter.location||p.location===filter.location)&&(!filter.state||(filter.state==='attention'?quantity<p.low_stock:filter.state==='available'?quantity>0:state===filter.state)))
  .sort((a,b)=>{
   if(filter.sort==='quantity_asc')return a.quantity-b.quantity||compare.compare(a.product.name,b.product.name);
   if(filter.sort==='quantity_desc')return b.quantity-a.quantity||compare.compare(a.product.name,b.product.name);
