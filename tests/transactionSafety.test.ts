@@ -1,5 +1,5 @@
-import {describe,it,expect} from 'vitest';
-import {stageProduct,canChangeOperation,validateReceipt} from '../src/transactionSafety';
+import {describe,it,expect,vi} from 'vitest';
+import {stageProduct,canChangeOperation,snapshotReview,confirmBatch,type BatchAttempt} from '../src/transactionSafety';
 import type {Product} from '../src/core';
 describe('出倉清單保護',()=>{
  it('加入另一款貨品保留已輸入數量，不靜默取代舊貨品',()=>{
@@ -17,19 +17,57 @@ describe('出倉清單保護',()=>{
   expect(canChangeOperation([{product_id:'first',quantity:12}], 'out','out')).toBe(true);
  });
 });
-describe('完成明細',()=>{
- const request={key:'key',type:'out',wh:'warehouse',items:[{product_id:'first',quantity:12},{product_id:'second',quantity:7}],remarks:''};
- const products=[{id:'first',name:'測試貨品甲'},{id:'second',name:'測試貨品乙'}]as Product[];
- it('完成畫面使用實際提交清單，各貨品數量逐項列出',()=>{
-  const receipt=validateReceipt({id:'batch',batch_reference:'SL-test'},request,products,[{id:'warehouse',name:'測試倉'}]);
-  expect(receipt.items.map(l=>[l.name,l.quantity])).toEqual([['測試貨品甲',12],['測試貨品乙',7]]);
-  expect(receipt.warehouse).toBe('測試倉');
-  request.items[0].quantity=99;
-  expect(receipt.items[0].quantity).toBe(12);
-  request.items[0].quantity=12;
+describe('確認清單同入賬明細核對',()=>{
+ const lines=[{product_id:'first',quantity:12},{product_id:'second',quantity:7}];
+ const draft=(items=lines)=>({key:'key',type:'out',wh:'warehouse',items,remarks:''});
+ const products=[{id:'first',name:'貨品甲'},{id:'second',name:'貨品乙'}] as Product[];
+ const makeAttempt=():BatchAttempt=>({review:snapshotReview(draft(),products,'測試倉'),acknowledged:null});
+ const ack={id:'batch',batch_reference:'SL-test'};
+ const saved={batch:{...ack,idempotency_key:'key',type:'out',warehouse_id:'warehouse'},items:[
+  {...lines[1],product_name:'貨品乙',before_quantity:7,after_quantity:0},
+  {...lines[0],product_name:'貨品甲',before_quantity:16,after_quantity:4}
+ ]};
+ it('確認後同步改動清單，都會提交畫面顯示嘅兩件貨品同原有數量',async()=>{
+  const live=lines.map(l=>({...l}));
+  const review=snapshotReview(draft(live),products,'測試倉');
+  live[0].quantity=99;live.pop();
+  const send=vi.fn(async()=>ack);
+  const result=await confirmBatch({review,acknowledged:null},send,async()=>saved);
+  expect(send).toHaveBeenCalledWith(draft());
+  expect(review.items.map(l=>l.quantity)).toEqual([12,7]);
+  expect(result.items.map(l=>[l.name,l.quantity])).toEqual([['貨品甲',12],['貨品乙',7]]);
  });
- it('空白或格式錯誤回應不可被當成交易完成',()=>{
-  for(const data of [null,{}, {id:'batch'}, {id:'batch',batch_reference:42}])expect(()=>validateReceipt(data,request,products,[])).toThrow('未收到有效交易確認');
-  expect(request.key).toBe('key');
+ it('成功回覆後缺少一件貨品，不顯示完成；重新核對唔會再提交',async()=>{
+  const attempt=makeAttempt(),send=vi.fn(async()=>ack);
+  await expect(confirmBatch(attempt,send,async()=>({...saved,items:saved.items.slice(0,1)}))).rejects.toThrow('同確認清單唔一致');
+  expect(attempt.acknowledged).toEqual(ack);
+  await expect(confirmBatch(attempt,send,async()=>saved)).resolves.toMatchObject({reference:'SL-test'});
+  expect(send).toHaveBeenCalledTimes(1);
+ });
+ it('拒絕錯批次、錯倉庫、錯交易方向、重複貨品、錯數量同錯扣數',async()=>{
+  for(const ledger of [
+   {...saved,batch:{...saved.batch,idempotency_key:'other'}},
+   {...saved,batch:{...saved.batch,warehouse_id:'other'}},
+   {...saved,batch:{...saved.batch,type:'in'}},
+   {...saved,items:[saved.items[0],saved.items[0]]},
+   {...saved,items:[saved.items[0],{...saved.items[1],quantity:11,after_quantity:5}]},
+   {...saved,items:[saved.items[0],{...saved.items[1],after_quantity:3}]}
+  ])await expect(confirmBatch(makeAttempt(),async()=>ack,async()=>ledger)).rejects.toThrow('同確認清單唔一致');
+ });
+ it('未收到有效批次回覆，重試會保留同一交易識別碼同清單',async()=>{
+  const attempt=makeAttempt(),read=vi.fn(async()=>saved);
+  const send=vi.fn().mockResolvedValueOnce({}).mockResolvedValueOnce(ack);
+  await expect(confirmBatch(attempt,send,read)).rejects.toThrow('未收到有效交易確認');
+  expect(read).not.toHaveBeenCalled();
+  await confirmBatch(attempt,send,read);
+  expect(send.mock.calls).toEqual([[draft()],[draft()]]);
+ });
+ it('交易已提交但讀取逾時，重試只讀返同一批次',async()=>{
+  const attempt=makeAttempt(),send=vi.fn(async()=>ack);
+  const read=vi.fn().mockRejectedValueOnce(new Error('逾時')).mockResolvedValueOnce(saved);
+  await expect(confirmBatch(attempt,send,read)).rejects.toThrow('逾時');
+  await confirmBatch(attempt,send,read);
+  expect(read.mock.calls).toEqual([['batch'],['batch']]);
+  expect(send).toHaveBeenCalledTimes(1);
  });
 });
