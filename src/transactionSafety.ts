@@ -38,3 +38,16 @@ export async function confirmBatch(attempt:BatchAttempt,send:(request:BatchReque
  });
  return {reference:batch.batch_reference,type:batch.type,warehouse,items:verified};
 }
+
+// These business errors are raised after the same-key lookup under the
+// transaction lock. A committed request would have returned its receipt first.
+export function canEditAfterBatchRejection(error:{code?:string;message:string},retrying:boolean):boolean{
+ if(error.code==='P0001'){
+  const reason=error.message;
+  if(reason==='交易識別碼已用於另一筆交易')return false;
+  if(reason==='倉庫不存在'||reason==='貨品不存在'||reason.startsWith('庫存不足：')||reason.startsWith('貨品已刪除：'))return true;
+ }
+ // On a retry, errors before the lookup (e.g. expired permission) cannot
+ // confirm the outcome of an earlier attempt.
+ return !retrying&&(error.code==='P0001'||error.code==='42501'||error.code?.startsWith('22')===true||error.code?.startsWith('23')===true);
+}

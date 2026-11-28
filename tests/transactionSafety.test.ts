@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {stageProduct,canChangeOperation,snapshotReview,confirmBatch,type BatchAttempt} from '../src/transactionSafety';
+import {stageProduct,canChangeOperation,snapshotReview,confirmBatch,canEditAfterBatchRejection,type BatchAttempt} from '../src/transactionSafety';
 import type {Product} from '../src/core';
 describe('出倉清單保護',()=>{
  it('加入另一款貨品保留已輸入數量，不靜默取代舊貨品',()=>{
@@ -69,5 +69,20 @@ describe('確認清單同入賬明細核對',()=>{
   await confirmBatch(attempt,send,read);
   expect(read.mock.calls).toEqual([['batch'],['batch']]);
   expect(send).toHaveBeenCalledTimes(1);
+ });
+});
+
+describe('未確認交易重試後解鎖清單',()=>{
+ it('重試獲確定拒絕（庫存不足、貨品已刪除或不存在、倉庫不存在）可返回編輯',()=>{
+  for(const message of ['庫存不足：貨品甲','貨品已刪除：貨品甲','貨品不存在','倉庫不存在']){
+   expect(canEditAfterBatchRejection({code:'P0001',message},true)).toBe(true);
+  }
+ });
+ it('重試遇到未經交易查核嘅拒絕、識別碼衝突或連線錯誤，保留原交易識別碼',()=>{
+  for(const [code,message] of [['42501','請登入'],['P0001','清單格式無效'],['P0001','交易識別碼已用於另一筆交易'],['23505','重複資料'],['','Failed to fetch']]){
+   expect(canEditAfterBatchRejection({code,message},true)).toBe(false);
+  }
+  expect(canEditAfterBatchRejection({code:'P0001',message:'交易識別碼已用於另一筆交易'},false)).toBe(false);
+  expect(canEditAfterBatchRejection({code:'P0001',message:'清單格式無效'},false)).toBe(true);
  });
 });
