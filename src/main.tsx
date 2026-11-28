@@ -114,7 +114,7 @@ function App({username,role}:{username:string;role:string}){
     return r.data;
    },async id=>{
     const [header,lines]=await timedRead(signal=>Promise.all([
-     client.from('inventory_batches').select('id,batch_reference,idempotency_key,type,warehouse_id').eq('id',id).single().abortSignal(signal),
+     client.from('inventory_batches').select('id,batch_reference,idempotency_key,type,warehouse_id').eq('id',id).abortSignal(signal).single(),
      client.from('inventory_batch_items').select('product_id,product_name,quantity,before_quantity,after_quantity').eq('batch_id',id).abortSignal(signal)
     ]));
     if(header.error||lines.error)throw new Error('暫時讀唔到完整交易紀錄，請稍後重新核對');
